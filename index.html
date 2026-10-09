@@ -4,29 +4,159 @@
 <meta charset="utf-8">
 <title>PS5 Speaker</title>
 <style>
-  :root { --bg: #0d1117; --fg: #e8eef2; --muted: #8b98a5; --accent: #1db954; }
-  body { background: var(--bg); color: var(--fg); font: 30px/1.4 sans-serif; margin: 0;
-         display: flex; align-items: center; justify-content: center; height: 100vh; }
-  main { text-align: center; max-width: 1400px; padding: 0 60px; }
-  h1 { font-size: 72px; margin: 0 0 20px; }
-  .dot { display: inline-block; width: 22px; height: 22px; border-radius: 50%;
-         background: var(--muted); margin-right: 14px; vertical-align: middle; }
-  .dot.live { background: var(--accent); }
-  #status { font-size: 36px; }
-  p { color: var(--muted); }
+  :root { --bg: #0b0d10; --fg: #f4f6f8; --muted: rgba(244, 246, 248, .62); --faint: rgba(244, 246, 248, .14);
+          --accent: #1ed760; --ease: cubic-bezier(.2, .7, .2, 1); }
+  html { font-size: 1.85vh; }
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100vh; overflow: hidden; background: var(--bg); color: var(--fg);
+         font-family: "SST", "Helvetica Neue", Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; }
+
+  /* Background: the cover, blurred, under a dark shade. Two layers crossfade. */
+  #bg img { position: absolute; inset: -10%; width: 120%; height: 120%; object-fit: cover;
+            filter: blur(70px) saturate(1.4); opacity: 0; transition: opacity 1.2s var(--ease); }
+  #bg img.on { opacity: .55; }
+  .shade { position: absolute; inset: 0;
+           background: radial-gradient(ellipse at 30% 40%, rgba(11, 13, 16, .25), rgba(11, 13, 16, .85) 70%),
+                       linear-gradient(180deg, rgba(11, 13, 16, .2), rgba(11, 13, 16, .75)); }
+
+  header, footer { position: absolute; left: 5rem; right: 5rem; display: flex; align-items: center;
+                   justify-content: space-between; color: var(--muted); font-size: 1.15rem; }
+  header { top: 3rem; }
+  footer { bottom: 3rem; }
+  .brand { display: flex; align-items: center; gap: .8rem; color: var(--fg); font-weight: 600; font-size: 1.3rem; }
+  .brand svg { width: 2rem; height: 2rem; }
+  #clock { font-size: 1.5rem; font-weight: 300; color: var(--fg); }
+  .chip { display: inline-flex; align-items: center; gap: .6rem; }
+  .dot { width: .7rem; height: .7rem; border-radius: 50%; background: var(--muted); transition: background .4s; }
+  .dot.live { background: var(--accent); box-shadow: 0 0 .8rem var(--accent); }
+
+  .screen { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            opacity: 0; visibility: hidden; transition: opacity .6s var(--ease), visibility 0s .6s; }
+  .screen.on { opacity: 1; visibility: visible; transition: opacity .6s var(--ease); }
+
+  /* Now playing */
+  #player { gap: 5.5rem; padding: 0 8rem; }
+  .art { position: relative; flex: none; width: 27rem; height: 27rem; border-radius: 1rem; overflow: hidden;
+         background: rgba(255, 255, 255, .06); box-shadow: 0 2.5rem 6rem rgba(0, 0, 0, .55); }
+  .art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0;
+             transition: opacity .8s var(--ease); }
+  .art img.on { opacity: 1; }
+  .art svg { position: absolute; inset: 30%; width: 40%; height: 40%; color: var(--faint); }
+  .info { flex: 1; min-width: 0; max-width: 48rem; }
+  .state { display: flex; align-items: center; gap: .9rem; font-size: 1.1rem; font-weight: 600;
+           letter-spacing: .2em; text-transform: uppercase; color: var(--accent); }
+  .eq { display: inline-flex; align-items: flex-end; gap: .22rem; height: 1.1rem; }
+  .eq i { width: .28rem; height: 30%; background: var(--accent); border-radius: .1rem; }
+  .playing .eq i { animation: eq 1s ease-in-out infinite; }
+  .playing .eq i:nth-child(2) { animation-delay: -.4s; }
+  .playing .eq i:nth-child(3) { animation-delay: -.7s; }
+  @keyframes eq { 0%, 100% { height: 25%; } 50% { height: 100%; } }
+  #title { margin: 1.4rem 0 .6rem; font-size: 3.9rem; line-height: 1.12; font-weight: 700; letter-spacing: -.01em;
+           display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  #artist { font-size: 1.9rem; color: var(--fg); opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #album { margin-top: .4rem; font-size: 1.35rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fade { animation: rise .7s var(--ease); }
+  @keyframes rise { from { opacity: 0; transform: translateY(.8rem); } to { opacity: 1; transform: none; } }
+  .progress { margin-top: 3rem; }
+  .bar { height: .4rem; border-radius: .2rem; background: var(--faint); overflow: hidden; }
+  #fill { height: 100%; width: 0; background: var(--fg); border-radius: .2rem; transition: width .3s linear; }
+  .times { display: flex; justify-content: space-between; margin-top: .8rem; font-size: 1.05rem;
+           color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* Waiting and error screens */
+  .message { text-align: center; max-width: 60rem; padding: 0 4rem; }
+  .message h1 { margin: 4.2rem 0 1rem; font-size: 3.2rem; font-weight: 700; }
+  .message p { margin: 0 auto; max-width: 46rem; font-size: 1.45rem; line-height: 1.5; color: var(--muted); }
+  .message b { color: var(--fg); }
+  .pulse { position: relative; width: 9rem; height: 9rem; margin: 0 auto; display: flex; align-items: center;
+           justify-content: center; border-radius: 50%; background: rgba(255, 255, 255, .07); }
+  .pulse svg { width: 4.2rem; height: 4.2rem; color: var(--fg); }
+  .pulse::before, .pulse::after { content: ""; position: absolute; inset: 0; border-radius: 50%;
+                                  border: .12rem solid var(--accent); opacity: 0; animation: ring 3s ease-out infinite; }
+  .pulse::after { animation-delay: 1.5s; }
+  @keyframes ring { from { transform: scale(1); opacity: .6; } to { transform: scale(1.55); opacity: 0; } }
+  #offline .pulse::before, #offline .pulse::after { display: none; }
+  #offline .pulse svg { color: #ff8a65; }
+  .steps { display: flex; justify-content: center; gap: 3.5rem; margin-top: 3.2rem; font-size: 1.2rem; color: var(--muted); }
+  .step { display: flex; align-items: center; gap: .8rem; white-space: nowrap; }
+  .steps i { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem;
+             border-radius: 50%; background: var(--faint); color: var(--fg); font-style: normal; font-weight: 700; }
 </style>
 </head>
 <body>
-<main>
-  <h1>PS5 Speaker</h1>
-  <div id="status"><span class="dot" id="dot"></span><span id="text">Connecting to the speaker...</span></div>
-  <p>Pick <b>PS5 Speaker</b> in the Spotify app on your phone.<br>
-     Music keeps playing on the home screen and during games.</p>
-</main>
+<div id="bg"><img id="bgA" alt=""><img id="bgB" alt=""></div>
+<div class="shade"></div>
+
+<header>
+  <div class="brand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="5" y="2.5" width="14" height="19" rx="2.5"/><circle cx="12" cy="14.5" r="3.5"/><circle cx="12" cy="7" r="1.2"/>
+    </svg>
+    PS5 Speaker
+  </div>
+  <div id="clock"></div>
+</header>
+
+<section id="idle" class="screen on">
+  <div class="message">
+    <div class="pulse">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="5" y="2.5" width="14" height="19" rx="2.5"/><circle cx="12" cy="14.5" r="3.5"/><circle cx="12" cy="7" r="1.2"/>
+      </svg>
+    </div>
+    <h1 id="idleTitle">Ready to play</h1>
+    <p id="idleText">Play something in Spotify and send it to this console.</p>
+    <div class="steps">
+      <div class="step"><i>1</i><span>Open Spotify on your phone</span></div>
+      <div class="step"><i>2</i><span>Tap the devices icon</span></div>
+      <div class="step"><i>3</i><span>Choose <b>PS5 Speaker</b></span></div>
+    </div>
+  </div>
+</section>
+
+<section id="player" class="screen">
+  <div class="art">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+    </svg>
+    <img id="coverA" alt=""><img id="coverB" alt="">
+  </div>
+  <div class="info">
+    <div class="state" id="state"><span class="eq"><i></i><i></i><i></i></span><span id="stateText">Now playing</span></div>
+    <div id="title"></div>
+    <div id="artist"></div>
+    <div id="album"></div>
+    <div class="progress">
+      <div class="bar"><div id="fill"></div></div>
+      <div class="times"><span id="pos">0:00</span><span id="dur">0:00</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="offline" class="screen">
+  <div class="message">
+    <div class="pulse">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>
+      </svg>
+    </div>
+    <h1>The speaker isn't running</h1>
+    <p>Send <b>spotify_speaker.elf</b> to the console with your payload loader.
+       After every restart of the PS5 it has to be sent again. This screen updates by itself.</p>
+  </div>
+</section>
+
+<footer>
+  <span class="chip"><span class="dot" id="dot"></span><span id="link">Connecting to the speaker...</span></span>
+  <span>Keeps playing on the home screen and during games</span>
+</footer>
+
 <audio id="a" preload="auto"></audio>
 <script>
 // The speaker payload (payload/spotify_daemon.cpp) serves Spotify as a live WAV
 // stream; the system music core plays it, also in the background. See howitworks.md.
+// This https page may load images and audio from the console over plain http, but
+// not data, so song info comes as images too (/meta.png, see metaPng() in the payload).
 var SPEAKER = 'http://127.0.0.1:8795';
 var audio = document.getElementById('a');
 var playing = false;
@@ -53,10 +183,14 @@ function log(kind, extra) {
   } catch (e) {}
 }
 
-function setStatus(live, text) {
-  document.getElementById('dot').className = live ? 'dot live' : 'dot';
-  document.getElementById('text').textContent = text;
+function $(id) { return document.getElementById(id); }
+
+function setLink(live, text) {
+  $('dot').className = live ? 'dot live' : 'dot';
+  $('link').textContent = text;
 }
+
+// ------------------------------------------------------------------ audio
 
 // (Re)connects to the live stream. A fresh connection drops whatever the music
 // core had buffered (~1.8 s), so a pause, skip or seek is heard sooner.
@@ -82,7 +216,7 @@ function connect(why) {
 audio.addEventListener('playing', function () {
   playing = true;
   started = true;
-  setStatus(true, 'Connected');
+  setLink(true, 'Connected');
   log('playing');
 });
 
@@ -102,7 +236,7 @@ audio.addEventListener('pause', function () {
 audio.addEventListener('error', function () {
   var mine = connection;
   playing = false;
-  setStatus(false, 'Speaker not reachable - is the speaker payload running?');
+  setLink(false, 'Reconnecting...');
   log('error', audio.error && audio.error.code);
   clearTimeout(retryTimer);
   retryTimer = setTimeout(function () { if (mine === connection) connect('after-error'); }, 3000);
@@ -110,9 +244,17 @@ audio.addEventListener('error', function () {
 
 // Watches the speaker's action counter (the width of /state.png). Actions that come
 // in quick succession (play right after pause, several skips) cause one reconnect.
+// A failing load means the payload is not running.
+var speakerUp = false;
+var stateFailures = 0;
 function poll() {
   var img = new Image();
   img.onload = function () {
+    stateFailures = 0;
+    if (!speakerUp) {
+      speakerUp = true;
+      render();
+    }
     var actions = img.naturalWidth;
     if (lastActions >= 0 && actions !== lastActions) {
       // A connection opened in the last 2 s that is not playing yet already carries
@@ -127,9 +269,232 @@ function poll() {
     }
     lastActions = actions;
   };
+  img.onerror = function () {
+    if (++stateFailures >= 3 && (speakerUp || shownScreen !== 'offline')) {
+      speakerUp = false;
+      render();
+    }
+  };
   img.src = SPEAKER + '/state.png?n=' + Date.now();
 }
 setInterval(poll, 250);
+
+// ------------------------------------------------------------------ song info
+
+var meta = null;           // the payload's statusJson()
+var positionAt = 0;        // Date.now() when meta.position was read
+var metaMode = 'canvas';   // 'bytes' when the page cannot read image pixels
+var canvasFailures = 0;
+
+function utf8(bytes) {
+  if (window.TextDecoder) return new TextDecoder('utf-8').decode(new Uint8Array(bytes));
+  var s = '';
+  for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return decodeURIComponent(escape(s));
+}
+
+// The pixels of a one-row grey PNG are the bytes of a JSON text.
+function pixelText(img) {
+  var c = document.createElement('canvas');
+  c.width = img.naturalWidth;
+  c.height = 1;
+  var g = c.getContext('2d');
+  g.drawImage(img, 0, 0);
+  var d = g.getImageData(0, 0, c.width, 1).data;   // throws if the canvas is tainted
+  var bytes = [];
+  for (var i = 0; i < d.length; i += 4) bytes.push(d[i]);
+  return utf8(bytes);
+}
+
+function loadImage(src, cors, done) {
+  var img = new Image();
+  if (cors) img.crossOrigin = 'anonymous';
+  img.onload = function () { done(img); };
+  img.onerror = function () { done(null); };
+  img.src = src;
+}
+
+function useMeta(m) {
+  meta = m;
+  positionAt = Date.now();
+  render();
+}
+
+function pollMeta() {
+  if (!speakerUp) return;
+  if (metaMode === 'canvas') {
+    loadImage(SPEAKER + '/meta.png?n=' + Date.now(), true, function (img) {
+      var m = null;
+      try { if (img) m = JSON.parse(pixelText(img)); } catch (e) {}
+      if (m) { canvasFailures = 0; useMeta(m); return; }
+      if (speakerUp && ++canvasFailures >= 3) { metaMode = 'bytes'; log('meta-mode', 'bytes'); }
+    });
+  } else {
+    pollMetaBytes();
+  }
+}
+
+// Fallback: each byte of the (stable) JSON as the width of its own image, read again
+// only when the version changes; the position comes from /pos.png.
+var bytesVersion = -1;
+var bytesBusy = false;
+function pollMetaBytes() {
+  var n = Date.now();
+  loadImage(SPEAKER + '/pos.png?n=' + n, false, function (img) {
+    if (img && meta) { meta.position = (img.naturalWidth - 1) * 1000; positionAt = Date.now(); render(); }
+  });
+  loadImage(SPEAKER + '/ver.png?n=' + n, false, function (img) {
+    if (!img || bytesBusy) return;
+    var version = img.naturalWidth - 1;
+    if (version === bytesVersion) return;
+    bytesBusy = true;
+    loadImage(SPEAKER + '/meta.png?stable&n=' + n, false, function (whole) {
+      if (!whole) { bytesBusy = false; return; }
+      var length = whole.naturalWidth, bytes = [], left = length;
+      for (var k = 0; k < length; k++) (function (k) {
+        loadImage(SPEAKER + '/meta.png?stable&b=' + k + '&n=' + n, false, function (b) {
+          bytes[k] = b ? b.naturalWidth - 1 : 0;
+          if (--left) return;
+          bytesBusy = false;
+          try {
+            var m = JSON.parse(utf8(bytes));
+            if (m.v % 30000 !== version) return;   // changed meanwhile: next round
+            bytesVersion = version;
+            m.position = meta ? meta.position : 0;
+            useMeta(m);
+          } catch (e) {}
+        });
+      })(k);
+    });
+  });
+}
+setInterval(pollMeta, 1000);
+
+// ------------------------------------------------------------------ rendering
+
+var shownScreen = '';
+var shownTrack = '';
+var shownCover = '';
+var coverLayer = 0;
+
+function show(id) {
+  if (shownScreen === id) return;
+  shownScreen = id;
+  ['idle', 'player', 'offline'].forEach(function (s) { $(s).className = s === id ? 'screen on' : 'screen'; });
+}
+
+function time(ms) {
+  var s = Math.max(0, Math.floor(ms / 1000));
+  var h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60;
+  s = s % 60;
+  return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+function currentPosition() {
+  if (!meta) return 0;
+  var p = meta.position || 0;
+  if (!meta.paused) p += Date.now() - positionAt;
+  return meta.duration ? Math.min(p, meta.duration) : p;
+}
+
+function setCover(url) {
+  if (url === shownCover) return;
+  shownCover = url;
+  var layers = [[$('coverA'), $('bgA')], [$('coverB'), $('bgB')]];
+  if (!url) {
+    layers.forEach(function (l) { l[0].className = l[1].className = ''; });
+    return;
+  }
+  loadImage(url, false, function (img) {
+    if (!img || url !== shownCover) return;
+    coverLayer = 1 - coverLayer;
+    var next = layers[coverLayer], old = layers[1 - coverLayer];
+    next[0].src = next[1].src = url;
+    next[0].className = next[1].className = 'on';
+    old[0].className = old[1].className = '';
+  });
+  // The cover's colour tints the accent (only if the image server allows reading it).
+  loadImage(url, true, function (img) {
+    if (!img || url !== shownCover) return;
+    try {
+      var c = document.createElement('canvas');
+      c.width = c.height = 12;
+      var g = c.getContext('2d');
+      g.drawImage(img, 0, 0, 12, 12);
+      var d = g.getImageData(0, 0, 12, 12).data, best = null, bestScore = -1;
+      for (var i = 0; i < d.length; i += 4) {
+        var r = d[i], gr = d[i + 1], b = d[i + 2];
+        var max = Math.max(r, gr, b), min = Math.min(r, gr, b);
+        var score = (max - min) * (max > 60 ? 1 : 0.2);   // vivid, not too dark
+        if (score > bestScore) { bestScore = score; best = [r, gr, b]; }
+      }
+      if (!best || bestScore < 40) { document.documentElement.style.removeProperty('--accent'); return; }
+      var lift = Math.max(1, 200 / Math.max(best[0], best[1], best[2]));   // bright enough on dark
+      document.documentElement.style.setProperty('--accent', 'rgb(' + best.map(function (v) {
+        return Math.min(255, Math.round(v * lift));
+      }).join(',') + ')');
+    } catch (e) {}
+  });
+}
+
+function render() {
+  if (!speakerUp) {
+    show('offline');
+    setLink(false, 'Speaker not running');
+    return;
+  }
+  if (!meta || !meta.track) {
+    var state = meta ? meta.state : '';
+    if (/^error/.test(state)) {
+      $('idleTitle').textContent = 'Reconnecting to Spotify...';
+      $('idleText').textContent = 'The speaker lost its connection to Spotify and is trying again.';
+    } else if (state === 'connecting' || state === 'starting') {
+      $('idleTitle').textContent = 'Signing in to Spotify...';
+      $('idleText').textContent = 'This takes a few seconds.';
+    } else {
+      $('idleTitle').textContent = 'Ready to play';
+      $('idleText').textContent = 'Play something in Spotify and send it to this console.';
+    }
+    show('idle');
+    setCover('');
+    return;
+  }
+  show('player');
+  var key = meta.track + '\n' + meta.artist;
+  if (key !== shownTrack) {
+    shownTrack = key;
+    $('title').textContent = meta.track;
+    $('artist').textContent = meta.artist;
+    $('album').textContent = meta.album;
+    ['title', 'artist', 'album'].forEach(function (id) {
+      var el = $(id);
+      el.className = '';
+      void el.offsetWidth;   // restart the animation
+      el.className = 'fade';
+    });
+  }
+  setCover(meta.cover || '');
+  var gone = meta.state === 'disconnected';
+  $('state').className = meta.paused || gone ? 'state' : 'state playing';
+  $('stateText').textContent = gone ? 'Disconnected' : meta.paused ? 'Paused' : 'Now playing';
+  renderProgress();
+}
+
+function renderProgress() {
+  if (!meta || !meta.track) return;
+  var p = currentPosition();
+  $('pos').textContent = time(p);
+  $('dur').textContent = meta.duration ? time(meta.duration) : '';
+  $('fill').style.width = meta.duration ? (100 * p / meta.duration).toFixed(2) + '%' : '0';
+}
+
+function tick() {
+  var d = new Date();
+  $('clock').textContent = d.getHours() + ':' + (d.getMinutes() < 10 ? '0' : '') + d.getMinutes();
+  renderProgress();
+}
+setInterval(tick, 500);
+tick();
 
 log('load', navigator.userAgent);
 
