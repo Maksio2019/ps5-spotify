@@ -1,0 +1,3 @@
+- [PS5 access is automatic](ps5-access-automatic.md) — deploy and read logs over FTP without asking; track every path written
+- [PS5 footprint](ps5-footprint.md) — every location written on the console, for cleanup if the project is abandoned
+- [GitHub access](github-access.md) — gh pushes to Maksio2019/ps5-spotify (page host), clone in ~/ps5-spotify-page

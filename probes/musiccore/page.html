@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Music core probe</title></head>
+<body style="background:#123;color:#fff;font:32px sans-serif">
+<p>Music core probe</p>
+<p id="state">starting</p>
+<script>
+// Runs inside the PS5 music core (NPXS40201) when a title's param.json names
+// this page as webAppUri. Beeps every 2 s and reports to the PC every 2 s,
+// so the log shows whether the page keeps running and playing in the background.
+var started = Date.now();
+function log(event, extra) {
+  var body = JSON.stringify({ t: ((Date.now() - started) / 1000).toFixed(1), event: event,
+    visibility: document.visibilityState, audio: ctx ? ctx.state : "none", extra: extra || "" });
+  try {
+    var request = new XMLHttpRequest();
+    request.open("POST", "/log", true);
+    request.send(body);
+  } catch (error) {}
+  document.getElementById("state").textContent = body;
+}
+var AudioContextClass = window.AudioContext || window.webkitAudioContext;
+var ctx = null;
+try { ctx = new AudioContextClass(); } catch (error) { log("audiocontext-error", String(error)); }
+log("loaded", navigator.userAgent + " | websocket=" + (typeof WebSocket) +
+    " | mediasource=" + (typeof MediaSource) + " | eme=" + (typeof navigator.requestMediaKeySystemAccess));
+function beep() {
+  if (!ctx) return;
+  if (ctx.state === "suspended") ctx.resume();
+  var oscillator = ctx.createOscillator();
+  var gain = ctx.createGain();
+  oscillator.frequency.value = 660;
+  gain.gain.value = 0.2;
+  oscillator.connect(gain);
+  gain.connect(ctx.destination);
+  oscillator.start();
+  oscillator.stop(ctx.currentTime + 0.3);
+}
+document.addEventListener("visibilitychange", function () { log("visibility"); });
+setInterval(function () { beep(); log("alive"); }, 2000);
+</script>
+</body>
+</html>
