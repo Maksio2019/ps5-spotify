@@ -1,0 +1,94 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>PS5 Speaker probe 2</title>
+<style>body{background:#0d1117;color:#e8eef2;font:22px/1.3 monospace;margin:40px}</style></head>
+<body><h1>PS5 Speaker probe 4: music core sources</h1><pre id="o"></pre>
+<script>
+// Calls msdk.music the way Spotify's PS5 page does (addSource, load,
+// registerNotifyMessage) and reports results to the PC as <img> requests.
+var PC = 'http://192.168.1.90:8766/b';
+var seq = 0;
+function send(text) {
+  text = String(text);
+  document.getElementById('o').textContent += text.slice(0, 400) + '\n';
+  var parts = [], n = 1500;
+  for (var i = 0; i < text.length; i += n) parts.push(text.slice(i, i + n));
+  var id = ++seq;
+  parts.forEach(function (p, i) {
+    new Image().src = PC + '?id=' + id + '&i=' + (i + 1) + '&n=' + parts.length + '&d=' + encodeURIComponent(p);
+  });
+}
+function names(obj) {
+  var out = [], o = obj, depth = 0;
+  while (o && depth < 4) {
+    try {
+      Object.getOwnPropertyNames(o).forEach(function (k) {
+        if (out.indexOf(k) >= 0) return;
+        var v; try { v = obj[k]; } catch (e) { v = '[throws]'; }
+        var t = typeof v;
+        out.push(k + '=' + (t === 'function' ? 'fn(' + v.length + ')' : t === 'object' ? (v === null ? 'null' : 'obj') : t + ':' + String(v).slice(0, 80)));
+      });
+    } catch (e) {}
+    o = Object.getPrototypeOf(o); depth++;
+    if (o === Object.prototype) break;
+  }
+  return out.join(', ');
+}
+function err(e) { return e && (e.name + ' ' + e.message + ' ' + (e.code || '') + ' ' + JSON.stringify(e)); }
+function result(label, p) {
+  try {
+    if (p && p.then) {
+      return p.then(function (v) { send(label + ' OK ' + (typeof v) + ' ' + (v && typeof v === 'object' ? names(v) : String(v))); return v; },
+                    function (e) { send(label + ' REJECT ' + err(e)); throw e; });
+    }
+    send(label + ' SYNC ' + (typeof p) + ' ' + (p && typeof p === 'object' ? names(p) : String(p)));
+    return Promise.resolve(p);
+  } catch (e) { send(label + ' THROW ' + err(e)); return Promise.reject(e); }
+}
+window.onerror = function (m, u, l) { send('onerror ' + m + ' line ' + l); };
+function src(f) { try { return String(f).slice(0, 2500); } catch (e) { return '[toString throws ' + e + ']'; } }
+function call(label, obj, name, args) {
+  try { return result(label, obj[name].apply(obj, args || [])).catch(function () {}); }
+  catch (e) { send(label + ' THROW ' + err(e)); return Promise.resolve(); }
+}
+window.addEventListener('loadedmsdk', function () {
+  var m = window.msdk && window.msdk.music;
+  send('loadedmsdk music=' + typeof m);
+  if (!m) return;
+  ['init', 'addSource', 'registerNotifyMessage'].forEach(function (k) { send('SRC music.' + k + ' = ' + src(m[k])); });
+  send('SRC msdk.addEventListener = ' + src(window.msdk.addEventListener));
+  send('SRC device.disableSystemMedia = ' + src(window.msdk.device.disableSystemMedia));
+  var base = location.href.replace(/[^\/]*$/, '');
+  var uris = [base + 'tone.wav', 'http://127.0.0.1:8795/live.wav'];
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function q(label, s, names) {
+    var c = Promise.resolve();
+    names.forEach(function (k) { c = c.then(function () { return call(label + '.' + k, s, k); }); });
+    return c;
+  }
+  function tryUri(uri, idx) {
+    var label = 'U' + idx;
+    send(label + ' = ' + uri);
+    var s;
+    try { s = m.addSource(uri, '', '', function (e) { send(label + ' CB ' + JSON.stringify(e)); }); }
+    catch (e) { send(label + ' addSource THROW ' + err(e)); return Promise.resolve(); }
+    return result(label + ' addSource', s).then(function (s) {
+      window['s' + idx] = s;
+      return call(label + '.load', s, 'load').then(function () { return wait(3000); })
+        .then(function () { return q(label, s, ['getNetworkState', 'getMusicInfo', 'getDuration', 'getCapabilities']); })
+        .then(function () { return call(label + '.play', s, 'play'); }).then(function () { return wait(4000); })
+        .then(function () { return q(label, s, ['isPlaying', 'getCurrentTime', 'getMusicInfo']); })
+        .then(function () { send(label + ' holding 15 s: check the Control Center now'); return wait(15000); })
+        .then(function () { return q(label, s, ['isPlaying', 'getCurrentTime', 'pause', 'remove']); });
+    }, function () {});
+  }
+  call('init', m, 'init').then(function () {
+    var c = Promise.resolve();
+    uris.forEach(function (u, i) { c = c.then(function () { return tryUri(u, i + 1); }); });
+    return c;
+  }).then(function () { send('ALL DONE'); }).catch(function (e) { send('chain ' + err(e)); });
+  ['onForeground', 'onBackground', 'onAppResume', 'onLaunchArgument'].forEach(function (ev) {
+    try { window.msdk.addEventListener(ev, function (a) { send('EVENT ' + ev + ' ' + JSON.stringify(a)); }); } catch (e) {}
+  });
+});
+
+</script></body></html>
