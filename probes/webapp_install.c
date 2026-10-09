@@ -8,8 +8,8 @@
  *    way ps5-payload-dev/websrv installs its launcher (sys.c).
  *  - SPKR00003 "Music Core Test": web app that asks the system custom music core
  *    (musicCoreName/musicCoreTitleId) to host our page.
- * The https address of our test page is read from URL_FILE when the payload runs, so a
- * new tunnel address only needs a new file, not a new build.
+ * The page address is DEFAULT_URL (GitHub Pages) unless URL_FILE holds another https
+ * address, so a test tunnel only needs a new file, not a new build.
  * Built with -DUNINSTALL it removes all three tiles and their files instead.
  *
  * Log:    /data/webapp_probe.log
@@ -35,6 +35,7 @@
 
 #define LOG_FILE "/data/webapp_probe.log"
 #define URL_FILE "/data/spkr_url.txt"
+#define DEFAULT_URL "https://maksio2019.github.io/ps5-spotify/"
 #define PANEL_URI "http://192.168.1.90:8765/"
 
 #define IOVEC_SIZE(x) (sizeof(x) / sizeof(struct iovec))
@@ -164,18 +165,20 @@ static int install_app(const char *title_id, const char *dir) {
   return sceAppInstUtilAppInstallAll(0);
 }
 
+/* The page on GitHub Pages; an https address in URL_FILE (e.g. a test tunnel)
+ * overrides it. */
 static int read_url(char *url, size_t size) {
   FILE *f = fopen(URL_FILE, "r");
-  if (!f) {
-    return -1;
-  }
-  if (!fgets(url, (int)size, f)) {
+  if (f) {
+    int ok = fgets(url, (int)size, f) != NULL;
     fclose(f);
-    return -1;
+    url[strcspn(url, "\r\n ")] = 0;
+    if (ok && !strncmp(url, "https://", 8)) {
+      return 0;
+    }
   }
-  fclose(f);
-  url[strcspn(url, "\r\n ")] = 0;
-  return strncmp(url, "https://", 8) ? -1 : 0;
+  snprintf(url, size, "%s", DEFAULT_URL);
+  return 0;
 }
 
 static int param_json(const struct tile *t, const char *url, char *out, size_t size) {

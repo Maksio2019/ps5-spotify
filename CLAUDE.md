@@ -8,9 +8,13 @@
 - docs/claude-memory/ holds Claude's memory notes (PS5 access rules, footprint list, GitHub access). Copy them back
   into Claude's memory folder (~/.claude/projects/<project>/memory/) when resuming on a new machine.
 - Not in git: .deps/ (`make deps`), build/ (rebuild), the Python venv in ~/pyenv (see "What exists"), ~/cspot.
-- To get it running again: jailbreak, `make -C payload` (after tools/build-cspot-payload.sh), write the page address to
-  /data/spkr_url.txt over FTP, send webapp_install.elf, then spotify_speaker.elf (port 9021). Pick "PS5 Speaker" on the
-  phone again (the saved login was deleted).
+- README.md (user-facing: install, run, uninstall, build, known issues) was written at shelving time. The built
+  payloads are attached to the GitHub release `v0.1.0-shelved` (with SHA256SUMS).
+- To get it running again: jailbreak, send webapp_install.elf once (it now defaults to the GitHub Pages address;
+  /data/spkr_url.txt only overrides it), then spotify_speaker.elf (port 9021). Pick "PS5 Speaker" on the phone again
+  (the saved login was deleted).
+- Open bug reported by the user: connecting from a different account/device hangs on "connecting"; only one account
+  works. Analysis and fix idea in README.md, "Known issues" 1.
 - Unfinished at shelving time, built but NEVER SEEN ON THE CONSOLE:
   - Song toast: payload sends a sceNotificationSend toast (InteractiveToastTemplateB, icon = the cover JPEG downloaded
     to /data/spkr/covers/) ~1.5 s after a new song enters the stream. The cover was downloaded on the console once
