@@ -1,0 +1,102 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>PS5 Speaker probe 2</title>
+<style>body{background:#0d1117;color:#e8eef2;font:22px/1.3 monospace;margin:40px}</style></head>
+<body><h1>PS5 Speaker probe 5: MseMusicCore</h1><pre id="o"></pre>
+<script>
+// Calls msdk.music the way Spotify's PS5 page does (addSource, load,
+// registerNotifyMessage) and reports results to the PC as <img> requests.
+var PC = 'http://192.168.1.90:8766/b';
+var seq = 0;
+function send(text) {
+  text = String(text);
+  document.getElementById('o').textContent += text.slice(0, 400) + '\n';
+  var parts = [], n = 1500;
+  for (var i = 0; i < text.length; i += n) parts.push(text.slice(i, i + n));
+  var id = ++seq;
+  parts.forEach(function (p, i) {
+    new Image().src = PC + '?id=' + id + '&i=' + (i + 1) + '&n=' + parts.length + '&d=' + encodeURIComponent(p);
+  });
+}
+function names(obj) {
+  var out = [], o = obj, depth = 0;
+  while (o && depth < 4) {
+    try {
+      Object.getOwnPropertyNames(o).forEach(function (k) {
+        if (out.indexOf(k) >= 0) return;
+        var v; try { v = obj[k]; } catch (e) { v = '[throws]'; }
+        var t = typeof v;
+        out.push(k + '=' + (t === 'function' ? 'fn(' + v.length + ')' : t === 'object' ? (v === null ? 'null' : 'obj') : t + ':' + String(v).slice(0, 80)));
+      });
+    } catch (e) {}
+    o = Object.getPrototypeOf(o); depth++;
+    if (o === Object.prototype) break;
+  }
+  return out.join(', ');
+}
+function err(e) { return e && (e.name + ' ' + e.message + ' ' + (e.code || '') + ' ' + JSON.stringify(e)); }
+function result(label, p) {
+  try {
+    if (p && p.then) {
+      return p.then(function (v) { send(label + ' OK ' + (typeof v) + ' ' + (v && typeof v === 'object' ? names(v) : String(v))); return v; },
+                    function (e) { send(label + ' REJECT ' + err(e)); throw e; });
+    }
+    send(label + ' SYNC ' + (typeof p) + ' ' + (p && typeof p === 'object' ? names(p) : String(p)));
+    return Promise.resolve(p);
+  } catch (e) { send(label + ' THROW ' + err(e)); return Promise.reject(e); }
+}
+window.onerror = function (m, u, l) { send('onerror ' + m + ' line ' + l); };
+function src(f) { try { return String(f).slice(0, 2500); } catch (e) { return '[toString throws ' + e + ']'; } }
+function call(label, obj, name, args) {
+  try { return result(label, obj[name].apply(obj, args || [])).catch(function () {}); }
+  catch (e) { send(label + ' THROW ' + err(e)); return Promise.resolve(); }
+}
+send('page ' + location.search + ' MediaSource=' + typeof window.MediaSource + ' ManagedMediaSource=' + typeof window.ManagedMediaSource +
+     ' WebKitMediaSource=' + typeof window.WebKitMediaSource + ' AudioContext=' + typeof window.AudioContext + ' msdk=' + typeof window.msdk);
+try {
+  var MS = window.MediaSource || window.ManagedMediaSource;
+  if (MS) send('isTypeSupported ' + ['audio/mp4; codecs="mp4a.40.2"', 'audio/mpeg', 'audio/webm; codecs="opus"', 'audio/wav', 'audio/aac']
+    .map(function (t) { return t + '=' + MS.isTypeSupported(t); }).join(' | '));
+} catch (e) { send('isTypeSupported THROW ' + err(e)); }
+function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+function q(label, s, names) {
+  var c = Promise.resolve();
+  names.forEach(function (k) { c = c.then(function () { return call(label + '.' + k, s, k); }); });
+  return c;
+}
+var base = location.href.replace(/[^\/]*$/, '').replace(/\?.*$/, '');
+var tone = location.href.replace(/[^\/]*(\?.*)?$/, '') + 'tone.wav';
+function audioTest() {
+  // Plain <audio>: who fetches it, does it play (you hear a beep), does a card appear.
+  var a = new Audio(); a.src = tone;
+  ['playing', 'pause', 'error', 'ended'].forEach(function (ev) {
+    a.addEventListener(ev, function () { send('AUDIO ' + ev + (a.error ? ' code ' + a.error.code : '') + ' t=' + a.currentTime.toFixed(1)); });
+  });
+  var p = a.play(); if (p && p.then) p.then(function () { send('AUDIO play() ok'); }, function (e) { send('AUDIO play() rejected ' + err(e)); });
+  send('AUDIO holding 15 s: check the Control Center now');
+  return wait(15000).then(function () { send('AUDIO t=' + a.currentTime.toFixed(1)); a.pause(); a.removeAttribute('src'); a.load(); });
+}
+function musicTest() {
+  var m = window.msdk && window.msdk.music;
+  send('music=' + typeof m);
+  if (!m) return Promise.resolve();
+  return call('init', m, 'init').then(function () {
+    var s;
+    try { s = m.addSource(tone, '', '', function (e) { send('SRC CB ' + JSON.stringify(e)); }); }
+    catch (e) { send('addSource THROW ' + err(e)); return; }
+    return result('addSource', s).then(function (s) {
+      return call('load', s, 'load').then(function () { return wait(3000); })
+        .then(function () { return q('src', s, ['getNetworkState', 'getMusicInfo']); })
+        .then(function () { return call('play', s, 'play'); }).then(function () { return wait(4000); })
+        .then(function () { return q('src', s, ['isPlaying', 'getCurrentTime']); })
+        .then(function () { return q('src', s, ['pause', 'remove']); });
+    }, function () {});
+  });
+}
+var started = false;
+function start() {
+  if (started) return; started = true;
+  musicTest().then(audioTest).then(function () { send('ALL DONE'); }).catch(function (e) { send('chain ' + err(e)); });
+}
+window.addEventListener('loadedmsdk', start);
+setTimeout(start, 4000);
+</script></body></html>
