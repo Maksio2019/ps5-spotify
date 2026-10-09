@@ -1,0 +1,139 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>PS5 Speaker</title>
+<style>
+  :root { --bg: #0d1117; --fg: #e8eef2; --muted: #8b98a5; --accent: #1db954; }
+  body { background: var(--bg); color: var(--fg); font: 30px/1.4 sans-serif; margin: 0;
+         display: flex; align-items: center; justify-content: center; height: 100vh; }
+  main { text-align: center; max-width: 1400px; padding: 0 60px; }
+  h1 { font-size: 72px; margin: 0 0 20px; }
+  .dot { display: inline-block; width: 22px; height: 22px; border-radius: 50%;
+         background: var(--muted); margin-right: 14px; vertical-align: middle; }
+  .dot.live { background: var(--accent); }
+  #status { font-size: 36px; }
+  p { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>PS5 Speaker</h1>
+  <div id="status"><span class="dot" id="dot"></span><span id="text">Connecting to the speaker...</span></div>
+  <p>Pick <b>PS5 Speaker</b> in the Spotify app on your phone.<br>
+     Music keeps playing on the home screen and during games.</p>
+</main>
+<audio id="a" preload="auto"></audio>
+<script>
+// The speaker payload (payload/spotify_daemon.cpp) serves Spotify as a live WAV
+// stream; the system music core plays it, also in the background. See howitworks.md.
+var SPEAKER = 'http://127.0.0.1:8795';
+var audio = document.getElementById('a');
+var playing = false;
+var lastActions = -1;
+var connection = 0;        // number of the current stream connection
+var retryTimer = null;
+var actionTimer = null;
+var connectedAt = 0;       // when the current connection was opened
+var started = false;       // whether the current connection is playing yet
+
+// Events are posted to the PC test server (build/webapp/server.py) only; GitHub
+// Pages has no /log.
+var LOG = !/\.github\.io$/.test(location.hostname);
+
+function log(kind, extra) {
+  if (!LOG) return;
+  try {
+    var x = new XMLHttpRequest();
+    x.open('POST', '/log', true);
+    x.setRequestHeader('Content-Type', 'application/json');
+    x.send(JSON.stringify({ kind: kind, extra: extra === undefined ? '' : String(extra),
+                            conn: connection, at: Math.round(audio.currentTime * 10) / 10,
+                            paused: audio.paused, focus: document.hasFocus() }));
+  } catch (e) {}
+}
+
+function setStatus(live, text) {
+  document.getElementById('dot').className = live ? 'dot live' : 'dot';
+  document.getElementById('text').textContent = text;
+}
+
+// (Re)connects to the live stream. A fresh connection drops whatever the music
+// core had buffered (~1.8 s), so a pause, skip or seek is heard sooner.
+// Each connection has a number; events of older connections are ignored (switching
+// the source cancels the old play() with an AbortError, which is not a failure).
+function connect(why) {
+  clearTimeout(retryTimer);
+  var mine = ++connection;
+  connectedAt = Date.now();
+  started = false;
+  log('connect', why);
+  audio.src = SPEAKER + '/live.wav?c=' + mine + '&nocache=' + Date.now();
+  var p = audio.play();
+  if (p && p.then) {
+    p.then(function () {}, function (e) {
+      if (mine !== connection || (e && e.name === 'AbortError')) return;
+      log('play-rejected', e);
+      retryTimer = setTimeout(function () { if (mine === connection) connect('retry'); }, 2000);
+    });
+  }
+}
+
+audio.addEventListener('playing', function () {
+  playing = true;
+  started = true;
+  setStatus(true, 'Connected');
+  log('playing');
+});
+
+// The system pauses the element when the app loses focus; playing again keeps the
+// music going at the home screen and, once a game starts, in the game.
+audio.addEventListener('pause', function () {
+  var mine = connection;
+  setTimeout(function () {
+    if (mine !== connection || !audio.paused) return;
+    var p = audio.play();
+    if (p && p.then) p.then(function () { log('resume-ok'); }, function (e) {
+      if (!(e && e.name === 'AbortError')) log('resume-rejected', e);
+    });
+  }, 300);
+});
+
+audio.addEventListener('error', function () {
+  var mine = connection;
+  playing = false;
+  setStatus(false, 'Speaker not reachable - is the speaker payload running?');
+  log('error', audio.error && audio.error.code);
+  clearTimeout(retryTimer);
+  retryTimer = setTimeout(function () { if (mine === connection) connect('after-error'); }, 3000);
+});
+
+// Watches the speaker's action counter (the width of /state.png). Actions that come
+// in quick succession (play right after pause, several skips) cause one reconnect.
+function poll() {
+  var img = new Image();
+  img.onload = function () {
+    var actions = img.naturalWidth;
+    if (lastActions >= 0 && actions !== lastActions) {
+      // A connection opened in the last 2 s that is not playing yet already carries
+      // the new audio; reconnecting again would only restart its start-up wait
+      // (Spotify's "play" arrives as two actions about a second apart).
+      if (!started && Date.now() - connectedAt < 2000) {
+        log('action-merged', actions);
+      } else {
+        clearTimeout(actionTimer);
+        actionTimer = setTimeout(function () { connect('action ' + actions); }, 150);
+      }
+    }
+    lastActions = actions;
+  };
+  img.src = SPEAKER + '/state.png?n=' + Date.now();
+}
+setInterval(poll, 250);
+
+log('load', navigator.userAgent);
+
+connect('start');
+</script>
+</body>
+</html>
